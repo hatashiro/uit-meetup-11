@@ -1,3 +1,7 @@
+html, body {
+  background-color: #fefefe;
+}
+
 .header {
   height: 200px;
   background-image: url("../images/sample.jpg");
