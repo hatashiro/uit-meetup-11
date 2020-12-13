@@ -21,6 +21,8 @@ node index.js --src blog --out docs
 open docs/index.html
 ```
 
+Note that the `docs/` directory is [Git-ignored](.gitignore).
+
 ## License
 
 [ISC](LICENSE)
