@@ -52,7 +52,8 @@ class Pipe {
 
   operate(input) {
     fail("This method should be overriden in the implementation classes.");
-    return null;  // Note that the output will be fed to the next pipes.
+    // Note that the output will be fed to the next pipes, unless it's falsy.
+    return null;
   }
 
   pipe(nextPipe) {
@@ -65,7 +66,7 @@ class Pipe {
     // `await` can handle non-Promise values too, so pipeFunction can become
     // either an async or plain function.
     const output = await this.operate(input);
-    this.nextPipes.map(next => next.execute(output));
+    if (output) this.nextPipes.map(next => next.execute(output));
   }
 }
 
