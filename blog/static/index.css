@@ -26,6 +26,7 @@ html, body {
 
 .post__date {
   color: #666;
+  white-space: nowrap;
 }
 
 .post__tag:before {
@@ -33,6 +34,8 @@ html, body {
 }
 
 .post__tag {
+  margin-left: 10px;
+  display: inline-block;
   color: #666;
 }
 

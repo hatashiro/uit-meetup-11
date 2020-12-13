@@ -88,18 +88,28 @@ class Logger extends Pipe {
 /**
  * Source and output.
  */
+
 class FileReader extends Pipe {
   constructor(path) {
     super();
     this.file = new FileData(path);
     this.file.rootdir = options.src;
+
+    FileReader._instances.push(this);
   }
 
   async operate() {
     this.file.content = await fs.readFile(this.file.path);
     return this.file;
   }
+
+  static executeAll() {
+    FileReader._instances.map(reader => reader.execute());
+  }
 }
+
+// A static variable to keep all FileReader instances.
+FileReader._instances = [];
 
 class FileWriter extends Pipe {
   async operate(file) {
@@ -152,18 +162,15 @@ class PostParser extends Pipe {
     // Parsing metadata will (and must) finish with a H1 title, starting with
     // a sharp (#).
     const metadata = {};
-    let markdownContent = '';
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      // Ignore any empty line.
-      if (line == '') continue;
+    while (lines.length) {
+      const line = lines.shift();
+      if (line == '') continue;  // Ignore any empty line.
 
       let m;
       if (m = metadataRegex.exec(line)) {
         metadata[m[1]] = m[2].split(',').map(str => str.trim());
       } else if (m = titleRegex.exec(line)) {
         metadata.title = m[1];
-        markdownContent = lines.slice(i).join('\n');
         break;
       } else {
         fail('The post is malformed.');
@@ -172,6 +179,7 @@ class PostParser extends Pipe {
     file.metadata = metadata;
 
     // Convert the markdown content into HTML.
+    const markdownContent = lines.join('\n');
     file.content = markdownConverter.makeHtml(markdownContent);
     file.extname = '.html';
 
@@ -185,18 +193,49 @@ class PostParser extends Pipe {
 class PugCompiler extends Pipe {
   constructor() {
     super();
-    this.template = null;
+
+    // The template is provided as a promise object, so that when an input is
+    // fed before the template is ready, it can wait for the future template.
+    this.promisedTemplate = new Promise(resolve => {
+      this.resolveTemplate = resolve;
+    });
   }
 
   // The PugCompiler pipe needs 2 inputs, one for the Pug template file and the
-  // other for the input data. The template should be fed first to process
-  // an input. Otherwise, the input will be ignored.
-  operate(input) {
+  // other for the input data. When a Pug file is provided, the file will be
+  // compiled into a template function and kept as a promise object. Other data
+  // inputs will use the promised template and render an output file.
+  async operate(input) {
     if (input instanceof FileData && input.extname == '.pug') {
-      this.template = pug.compile(input.content);
-    } else if (this.template) {
-      input.content = this.template(input);
-      return input;
+      this.resolveTemplate(pug.compile(input.content));
+      return;  // The template itself doesn't produce an output.
+    }
+
+    const template = await this.promisedTemplate;
+    input.content = template(input);
+    return input;
+  }
+}
+
+/**
+ * Aggregator
+ */
+class Aggregator extends Pipe {
+  constructor(path, aggregationCount, compareFunction=undefined) {
+    super();
+    this.file = new FileData(path);
+    this.aggregationCount = aggregationCount;
+    this.compareFunction = compareFunction;
+    this.inputs = [];
+  }
+
+  operate(input) {
+    this.inputs.push(input);
+    if (this.inputs.length == this.aggregationCount) {
+      this.inputs.sort(this.compareFunction);
+      this.file.metadata.inputs = this.inputs;
+      this.inputs = [];  // Empty the aggregated inputs.
+      return this.file;
     }
   }
 }
@@ -217,21 +256,30 @@ async function main() {
   imageReaders.map(reader => reader.pipe(writer));
 
   // Prepare the post compiler.
-  const postTemplateReader = new FileReader('templates/post.pug');
   const postCompiler = new PugCompiler();
-  postTemplateReader.pipe(postCompiler);
-  postTemplateReader.execute();  // Feed the post compiler with the template.
+  new FileReader('templates/post.pug').pipe(postCompiler);
 
+  // Handle post files.
   const postReaders = await fileReadersInDir('posts');
   const postParser = new PostParser();
-  postReaders
-    .map(reader => reader.pipe(postParser).pipe(postCompiler).pipe(writer));
+  postReaders.map(reader =>
+    reader.pipe(postParser).pipe(postCompiler).pipe(writer));
+
+  // Prepare the index compiler.
+  const indexCompiler = new PugCompiler();
+  new FileReader('templates/index.pug').pipe(indexCompiler);
+
+  const postAggregator = new Aggregator(
+    'index.html',
+    postReaders.length,
+    // Sorted in the descending order of the posted date.
+    (x, y) => -x.metadata.date[0].localeCompare(y.metadata.date[0]),
+  );
+  postReaders.map(reader =>
+    reader.pipe(postAggregator).pipe(indexCompiler).pipe(writer));
 
   // Execute all.
-  [].concat(staticReaders)
-    .concat(imageReaders)
-    .concat(postReaders)
-    .map(reader => reader.execute());
+  FileReader.executeAll();
 }
 
 main();
