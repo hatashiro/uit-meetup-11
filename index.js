@@ -83,7 +83,7 @@ class Logger extends Pipe {
 }
 
 /**
- * Source and Output.
+ * Source and output.
  */
 class FileReader extends Pipe {
   constructor(path) {
