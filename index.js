@@ -65,7 +65,7 @@ class Pipe {
     // `await` can handle non-Promise values too, so pipeFunction can become
     // either an async or plain function.
     const output = await this.operate(input);
-    this.nextPipes.forEach(next => next.execute(output));
+    this.nextPipes.map(next => next.execute(output));
   }
 }
 
@@ -105,18 +105,33 @@ class FileWriter extends Pipe {
   }
 }
 
+// Returns file readers of files in a given directory.
+async function directoryReaders(dir) {
+  const files = await fs.readdir(path.join(options.src, dir));
+  return files.map(file => new FileReader(path.join(dir, file)));
+}
+
 /**
  * The main piping logic.
  */
-function main() {
+async function main() {
   const logger = new Logger();
   const writer = new FileWriter();
 
-  const reader = new FileReader('static/index.css');
-  reader.pipe(logger);
+  const readers = [];
+
+  // Handle static files.
+  const staticReaders = await directoryReaders('static')
+  staticReaders.map(reader => reader.pipe(writer));
+  readers.push(...staticReaders);
+
+  // Handle image files.
+  const imageReaders = await directoryReaders('images')
+  imageReaders.map(reader => reader.pipe(writer));
+  readers.push(...imageReaders);
 
   // Execute all.
-  reader.execute();
+  readers.map(reader => reader.execute());
 }
 
 main();
