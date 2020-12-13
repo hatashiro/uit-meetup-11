@@ -7,6 +7,9 @@ const {fail} = require('assert');
 /**
  * Parse argv.
  */
+
+// `--key value` or `--key=value` will be parsed into a JS object with the key
+// and value.
 const optionRegex = /^--?(.+?)(=(.*))?$/;
 function parseArgv(argv) {
   const [node, script, ...opts] = argv;
@@ -27,7 +30,6 @@ const options = parseArgv(process.argv);
  */
 class FileData {
   constructor(relpath) {
-    this.rootdir = '';
     this.dirname = path.dirname(relpath);
     this.extname = path.extname(relpath);
     this.basename = path.basename(relpath, this.extname);
@@ -35,12 +37,12 @@ class FileData {
     this.metadata = {};
   }
 
-  get dir() {
-    return path.join(this.rootdir, this.dirname);
+  dir(root='') {
+    return path.join(root, this.dirname);
   }
 
-  get path() {
-    return path.join(this.dir, this.basename + this.extname);
+  path(root='') {
+    return path.join(this.dir(root), this.basename + this.extname);
   }
 }
 
@@ -73,18 +75,6 @@ class Pipe {
   }
 }
 
-// A logger pipe that just bypasses the value with console-logging it.
-class Logger extends Pipe {
-  operate(file) {
-    console.log(file.path);
-    console.log('---');
-    console.log(file.content.toString('utf8').trim());
-    console.log('---');
-    console.log(file.metadata);
-    return file;
-  }
-}
-
 /**
  * Source and output.
  */
@@ -93,13 +83,12 @@ class FileReader extends Pipe {
   constructor(path) {
     super();
     this.file = new FileData(path);
-    this.file.rootdir = options.src;
 
     FileReader._instances.push(this);
   }
 
   async operate() {
-    this.file.content = await fs.readFile(this.file.path);
+    this.file.content = await fs.readFile(this.file.path(options.src));
     return this.file;
   }
 
@@ -113,9 +102,8 @@ FileReader._instances = [];
 
 class FileWriter extends Pipe {
   async operate(file) {
-    file.rootdir = options.out;
-    await fs.mkdir(file.dir, {recursive: true});
-    await fs.writeFile(file.path, file.content);
+    await fs.mkdir(file.dir(options.out), {recursive: true});
+    await fs.writeFile(file.path(options.out), file.content);
   }
 }
 
@@ -244,7 +232,6 @@ class Aggregator extends Pipe {
  * The main piping logic.
  */
 async function main() {
-  const logger = new Logger();
   const writer = new FileWriter();
 
   // Handle static files.
