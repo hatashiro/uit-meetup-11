@@ -12,14 +12,14 @@ html
       h1 Blog
 
     div.container
-      h2 Posts
+      h3.container_title Posts
       ul.posts
         each post in metadata.inputs
           li.post
             h3.post__title
-              a(href=post.relpath)= post.metadata.title
+              a(href=post.path())= post.metadata.title
+            h6.post__date= post.metadata.date
             p
-              span.post__date= post.metadata.date
               each tag in post.metadata.tags
                 span.post__tag= tag
 

@@ -24,9 +24,28 @@ html, body {
   font-weight: 900;
 }
 
+.container_title {
+  text-transform: uppercase;
+  font-weight: 900;
+}
+
+.posts {
+  list-style: none;
+  padding: 0;
+}
+
+.post {
+  margin-top: 30px;
+}
+
+.post__title a {
+  text-decoration: none;
+}
+
 .post__date {
   color: #666;
   white-space: nowrap;
+  font-weight: normal;
 }
 
 .post__tag:before {
@@ -34,9 +53,16 @@ html, body {
 }
 
 .post__tag {
-  margin-left: 10px;
+  margin-right: 10px;
   display: inline-block;
   color: #666;
+  border: 1px solid #666;
+  padding: 0px 8px;
+  border-radius: 12px;
+}
+
+.post__tag:last-child {
+  margin-right: 0;
 }
 
 .post__external_links {

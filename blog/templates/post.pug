@@ -13,8 +13,8 @@ html
 
     div.container
       h1= metadata.title
+      h6.post__date= metadata.date
       p
-        span.post__date= metadata.date
         each tag in metadata.tags
           span.post__tag= tag
       != content
