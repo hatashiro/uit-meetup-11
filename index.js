@@ -33,7 +33,6 @@ function parseArgv(argv) {
 // The options mainly include the `src` directory and the `out` directory.
 const options = parseArgv(process.argv);
 
-
 /**
  * FileData is the main object used as an input/output of the following pipes.
  */
