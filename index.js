@@ -1,5 +1,7 @@
 const fs = require('fs/promises');
+const markdown = require('showdown');
 const path = require('path');
+const pug = require('pug');
 const {fail} = require('assert');
 
 /**
@@ -57,7 +59,8 @@ class Pipe {
   }
 
   pipe(nextPipe) {
-    this.nextPipes.push(nextPipe);
+    if (!this.nextPipes.includes(nextPipe))
+      this.nextPipes.push(nextPipe);
     // Return nextPipe for chaining, e.g. x.pipe(y).pipe(z)
     return nextPipe;
   }
@@ -107,9 +110,95 @@ class FileWriter extends Pipe {
 }
 
 // Returns file readers of files in a given directory.
-async function directoryReaders(dir) {
+async function fileReadersInDir(dir) {
   const files = await fs.readdir(path.join(options.src, dir));
   return files.map(file => new FileReader(path.join(dir, file)));
+}
+
+/**
+ * Post parser.
+ */
+const metadataRegex = /^- *(.+): *(.+)$/;
+const titleRegex = /^# *(.+)$/;
+
+const markdownConverter = new markdown.Converter({
+  ghCompatibleHeaderId: true,
+  simplifiedAutoLink: true,
+  tables: true,
+  openLinksInNewWindow: true,
+});
+
+class PostParser extends Pipe {
+  async operate(file) {
+    const lines = file.content.toString('utf8').split('\n');
+
+    // Parse metadata.
+    //
+    // Post metadata is represented as an unordered list with a colon (:) as
+    // the key-value separator and a comma (,) as the value separator.
+    //
+    // For example, the following metadata in a post ...
+    //
+    //   - date: 2020-12-10
+    //   - tags: Brave, News Reader, Browser
+    //
+    // ... will be parsed as the following JS object.
+    //
+    //   {
+    //     date: ['2020-12-10'],
+    //     tags: ['Brave', 'News Reader', 'Browser'],
+    //   }
+    //
+    // Parsing metadata will (and must) finish with a H1 title, starting with
+    // a sharp (#).
+    const metadata = {};
+    let markdownContent = '';
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Ignore any empty line.
+      if (line == '') continue;
+
+      let m;
+      if (m = metadataRegex.exec(line)) {
+        metadata[m[1]] = m[2].split(',').map(str => str.trim());
+      } else if (m = titleRegex.exec(line)) {
+        metadata.title = m[1];
+        markdownContent = lines.slice(i).join('\n');
+        break;
+      } else {
+        fail('The post is malformed.');
+      }
+    }
+    file.metadata = metadata;
+
+    // Convert the markdown content into HTML.
+    file.content = markdownConverter.makeHtml(markdownContent);
+    file.extname = '.html';
+
+    return file;
+  }
+}
+
+/**
+ * Template compiler.
+ */
+class PugCompiler extends Pipe {
+  constructor() {
+    super();
+    this.template = null;
+  }
+
+  // The PugCompiler pipe needs 2 inputs, one for the Pug template file and the
+  // other for the input data. The template should be fed first to process
+  // an input. Otherwise, the input will be ignored.
+  operate(input) {
+    if (input instanceof FileData && input.extname == '.pug') {
+      this.template = pug.compile(input.content);
+    } else if (this.template) {
+      input.content = this.template(input);
+      return input;
+    }
+  }
 }
 
 /**
@@ -119,20 +208,30 @@ async function main() {
   const logger = new Logger();
   const writer = new FileWriter();
 
-  const readers = [];
-
   // Handle static files.
-  const staticReaders = await directoryReaders('static')
+  const staticReaders = await fileReadersInDir('static')
   staticReaders.map(reader => reader.pipe(writer));
-  readers.push(...staticReaders);
 
   // Handle image files.
-  const imageReaders = await directoryReaders('images')
+  const imageReaders = await fileReadersInDir('images')
   imageReaders.map(reader => reader.pipe(writer));
-  readers.push(...imageReaders);
+
+  // Prepare the post compiler.
+  const postTemplateReader = new FileReader('templates/post.pug');
+  const postCompiler = new PugCompiler();
+  postTemplateReader.pipe(postCompiler);
+  postTemplateReader.execute();  // Feed the post compiler with the template.
+
+  const postReaders = await fileReadersInDir('posts');
+  const postParser = new PostParser();
+  postReaders
+    .map(reader => reader.pipe(postParser).pipe(postCompiler).pipe(writer));
 
   // Execute all.
-  readers.map(reader => reader.execute());
+  [].concat(staticReaders)
+    .concat(imageReaders)
+    .concat(postReaders)
+    .map(reader => reader.execute());
 }
 
 main();

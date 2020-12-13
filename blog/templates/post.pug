@@ -1,0 +1,26 @@
+doctype html
+html
+  head
+    title= metadata.title + ' - Blog'
+    meta(charset='UTF-8')
+    meta(name='viewport', content='width=device-width, initial-scale=1')
+    link(rel='stylesheet', href='../static/bootstrap.min.css')
+    link(rel='stylesheet', href='../static/index.css')
+
+  body
+    div.header
+      h1 Blog
+
+    div.container
+      h1= metadata.title
+      p
+        span.post__date= metadata.date
+        each tag in metadata.tags
+          span.post__tag= tag
+      != content
+
+    div.container.post__external_links
+      p
+        a.post__external_link(href="../index.html") ← Back
+
+    script(src="../static/bootstrap.min.js")
