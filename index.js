@@ -4,12 +4,18 @@ const path = require('path');
 const pug = require('pug');
 const {fail} = require('assert');
 
-/**
- * Parse argv.
- */
+// The singleton markdown converter.
+const markdownConverter = new markdown.Converter({
+  ghCompatibleHeaderId: true,
+  simplifiedAutoLink: true,
+  tables: true,
+  openLinksInNewWindow: true,
+});
 
-// `--key value` or `--key=value` will be parsed into a JS object with the key
-// and value.
+/**
+ * The parseArgv() function will parse the argv options, `--key value` or
+ * `--key=value`, into a JS object with the key/value entries.
+ */
 const optionRegex = /^--?(.+?)(=(.*))?$/;
 function parseArgv(argv) {
   const [node, script, ...opts] = argv;
@@ -23,10 +29,13 @@ function parseArgv(argv) {
   }
   return options;
 }
+
+// The options mainly include the `src` directory and the `out` directory.
 const options = parseArgv(process.argv);
 
+
 /**
- * Definition of FileData.
+ * FileData is the main object used as an input/output of the following pipes.
  */
 class FileData {
   constructor(relpath) {
@@ -47,16 +56,21 @@ class FileData {
 }
 
 /**
- * Definition of Pipe.
+ * Definition of Pipe, the base clase of every pipe implementation.
  */
 class Pipe {
   constructor() {
     this.nextPipes = [];
   }
 
+  // The operate() method is called when a previous pipe's output is passed.
+  //
+  // This method should be overriden properly in the implementation classes.
+  //
+  // If it returns a truthy value, the value will be passed to the next pipes.
+  // Otherwise, the flow stops in the current pipe.
   operate(input) {
     fail("This method should be overriden in the implementation classes.");
-    // Note that the output will be fed to the next pipes, unless it's falsy.
     return null;
   }
 
@@ -76,9 +90,12 @@ class Pipe {
 }
 
 /**
- * Source and output.
+ * FileReader is to read a file and produce a FileData object.
+ *
+ * As it's a source pipe, it doesn't accept any input. Instead, it should be
+ * triggered manually by calling execute(), or the static executeAll() helper
+ * function.
  */
-
 class FileReader extends Pipe {
   constructor(path) {
     super();
@@ -100,6 +117,17 @@ class FileReader extends Pipe {
 // A static variable to keep all FileReader instances.
 FileReader._instances = [];
 
+// A helper method to return file readers for all files in a given directory.
+async function fileReadersInDir(dir) {
+  const files = await fs.readdir(path.join(options.src, dir));
+  return files.map(file => new FileReader(path.join(dir, file)));
+}
+
+/**
+ * FileWriter is to write a file from a FileData object.
+ *
+ * As it's a sync pipe, it doesn't produce any output.
+ */
 class FileWriter extends Pipe {
   async operate(file) {
     await fs.mkdir(file.dir(options.out), {recursive: true});
@@ -107,33 +135,19 @@ class FileWriter extends Pipe {
   }
 }
 
-// Returns file readers of files in a given directory.
-async function fileReadersInDir(dir) {
-  const files = await fs.readdir(path.join(options.src, dir));
-  return files.map(file => new FileReader(path.join(dir, file)));
-}
-
 /**
- * Post parser.
+ * PostParser is a pipe to accept a post file (in Markdown) and produce an HTML
+ * output with the post's metadata.
  */
 const metadataRegex = /^- *(.+): *(.+)$/;
 const titleRegex = /^# *(.+)$/;
-
-const markdownConverter = new markdown.Converter({
-  ghCompatibleHeaderId: true,
-  simplifiedAutoLink: true,
-  tables: true,
-  openLinksInNewWindow: true,
-});
-
 class PostParser extends Pipe {
   async operate(file) {
     const lines = file.content.toString('utf8').split('\n');
 
-    // Parse metadata.
-    //
-    // Post metadata is represented as an unordered list with a colon (:) as
-    // the key-value separator and a comma (,) as the value separator.
+    // In each post file, metadata is represented as an unordered list with a
+    // colon (:) as the key-value separator and a comma (,) as the value
+    // separator.
     //
     // For example, the following metadata in a post ...
     //
@@ -147,8 +161,7 @@ class PostParser extends Pipe {
     //     tags: ['Brave', 'News Reader', 'Browser'],
     //   }
     //
-    // Parsing metadata will (and must) finish with a H1 title, starting with
-    // a sharp (#).
+    // Parsing metadata ends at the post's title, starting with a sharp (#).
     const metadata = {};
     while (lines.length) {
       const line = lines.shift();
@@ -176,43 +189,53 @@ class PostParser extends Pipe {
 }
 
 /**
- * Template compiler.
+ * PugCompiler is to compile a Pug template into an HTML file.
+ *
+ * It uses 2 inputs; one is a template file and the other is a date file. Each
+ * data file will produce an output.
  */
 class PugCompiler extends Pipe {
   constructor() {
     super();
 
-    // The template is provided as a promise object, so that when an input is
-    // fed before the template is ready, it can wait for the future template.
+    // The template is provided as a promise object, so that when a data file
+    // is fed before the template file, it can wait for the future template.
     this.promisedTemplate = new Promise(resolve => {
       this.resolveTemplate = resolve;
     });
   }
 
-  // The PugCompiler pipe needs 2 inputs, one for the Pug template file and the
-  // other for the input data. When a Pug file is provided, the file will be
-  // compiled into a template function and kept as a promise object. Other data
-  // inputs will use the promised template and render an output file.
   async operate(input) {
     if (input instanceof FileData && input.extname == '.pug') {
+      // If it's the template file, resolve it to the promise.
       this.resolveTemplate(pug.compile(input.content));
-      return;  // The template itself doesn't produce an output.
+      // The template itself doesn't produce an output.
+    } else {
+      // If it's a data file, wait for the template and render the content.
+      const template = await this.promisedTemplate;
+      input.content = template(input);
+      return input;  // Each data file produces an output.
     }
-
-    const template = await this.promisedTemplate;
-    input.content = template(input);
-    return input;
   }
 }
 
 /**
- * Aggregator
+ * Aggregator is to aggregate inputs and produce the aggregated output.
+ *
+ * It's useful when information from multiple files is needed to render a
+ * single output.
+ *
+ * The output produced by an aggregator is an empty file, with the aggregated
+ * inputs in its `metadata.inputs` property.
  */
 class Aggregator extends Pipe {
   constructor(path, aggregationCount, compareFunction=undefined) {
     super();
     this.file = new FileData(path);
+    // aggregationCount represents the count of inputs to be aggregated per
+    // output.
     this.aggregationCount = aggregationCount;
+    // compareFunction is used to sort the aggregated inputs.
     this.compareFunction = compareFunction;
     this.inputs = [];
   }
@@ -229,36 +252,44 @@ class Aggregator extends Pipe {
 }
 
 /**
- * The main piping logic.
+ * The main function.
+ *
+ * All pipe instances are initialized and piped in this method.
  */
 async function main() {
+  // The singleton file writer.
   const writer = new FileWriter();
 
-  // Handle static files.
+  // File readers for static files.
   const staticReaders = await fileReadersInDir('static')
-  staticReaders.map(reader => reader.pipe(writer));
+  staticReaders.map(reader => reader.pipe(writer));  // Just copy.
 
-  // Handle image files.
+  // File readers for image files.
   const imageReaders = await fileReadersInDir('images')
-  imageReaders.map(reader => reader.pipe(writer));
+  imageReaders.map(reader => reader.pipe(writer));  // Just copy.
 
-  // Prepare the post compiler.
+  // Prepare the post page compiler with the template file.
   const postCompiler = new PugCompiler();
   new FileReader('templates/post.pug').pipe(postCompiler);
 
-  // Handle post files.
+  // Prepare the index page compiler with the template file.
+  const indexCompiler = new PugCompiler();
+  new FileReader('templates/index.pug').pipe(indexCompiler);
+
+  // File readers for post files.
   const postReaders = await fileReadersInDir('posts');
+
+  // Render each post page using the post page compiler.
   const postParser = new PostParser();
   postReaders.map(reader =>
     reader.pipe(postParser).pipe(postCompiler).pipe(writer));
 
-  // Prepare the index compiler.
-  const indexCompiler = new PugCompiler();
-  new FileReader('templates/index.pug').pipe(indexCompiler);
-
+  // Render the index page using the index page compiler.
+  // An aggregator pipe is used to aggregate all post files, to render the post
+  // list in the index page.
   const postAggregator = new Aggregator(
     'index.html',
-    postReaders.length,
+    postReaders.length,  // Aggregates all post files.
     // Sorted in the descending order of the posted date.
     (x, y) => -x.metadata.date[0].localeCompare(y.metadata.date[0]),
   );
