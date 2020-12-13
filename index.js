@@ -81,10 +81,11 @@ class Pipe {
   }
 
   async execute(input) {
-    // `await` can handle non-Promise values too, so pipeFunction can become
-    // either an async or plain function.
+    // `await` can handle non-Promise values too, so operate() can return
+    // either a promise or a plain value.
     const output = await this.operate(input);
-    if (output) this.nextPipes.map(next => next.execute(output));
+    if (output)
+      this.nextPipes.map(next => next.execute(output));
   }
 }
 
