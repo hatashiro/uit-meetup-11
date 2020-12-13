@@ -1,4 +1,4 @@
-# Implement static site generator for blog
+# Implement you a static site generator.
 
 Sample code for my talk in
 [UIT meetup vol.11](https://uit.connpass.com/event/197740/).
