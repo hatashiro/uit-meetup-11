@@ -255,6 +255,22 @@ class Aggregator extends Pipe {
  * The main function.
  *
  * All pipe instances are initialized and piped in this method.
+ *
+ * The entire pipeline:
+ *
+ *   [FileReader statics/*]────────────────────────────────────────┐
+ *                                                                 │
+ *   [FileReader images/*]─────────────────────────────────────────┤
+ *                                                                 │
+ *   [FileReader template/post.pug]───────────────┐                │
+ *                                                │                │
+ *   [FileReader posts/*]──┬────────────────[PugCompiler]──────────┤
+ *                         │                                       │
+ *                         └─────[Aggregator]─────┐                │
+ *                                                │                │
+ *   [FileReader template/index.pug]─────────[PugCompiler]─────────┤
+ *                                                                 │
+ *                                                            [FileWriter]
  */
 async function main() {
   // The singleton file writer.
