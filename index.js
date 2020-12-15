@@ -142,13 +142,14 @@ class FileWriter extends Pipe {
 const metadataRegex = /^- *(.+): *(.+)$/;
 const titleRegex = /^# *(.+)$/;
 class PostParser extends Pipe {
-  async operate(file) {
+  operate(file) {
     const {metadata, remainingContent} =
       this.parseMetadata(file.content.toString('utf8'));
     file.metadata = metadata;
     // Convert the markdown content into HTML.
     file.content = markdownConverter.makeHtml(remainingContent);
     file.extname = '.html';
+
     return file;
   }
 
