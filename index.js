@@ -281,7 +281,7 @@ async function main() {
   const writer = new FileWriter();
 
   // File readers for static files.
-  const staticReaders = await fileReadersInDir('static')
+  const staticReaders = await fileReadersInDir('static');
   staticReaders.map(reader => reader.pipe(writer));  // Just copy.
 
   // File readers for image files.
