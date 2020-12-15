@@ -143,25 +143,34 @@ const metadataRegex = /^- *(.+): *(.+)$/;
 const titleRegex = /^# *(.+)$/;
 class PostParser extends Pipe {
   async operate(file) {
-    const lines = file.content.toString('utf8').split('\n');
+    const {metadata, remainingContent} =
+      this.parseMetadata(file.content.toString('utf8'));
+    file.metadata = metadata;
+    // Convert the markdown content into HTML.
+    file.content = markdownConverter.makeHtml(remainingContent);
+    file.extname = '.html';
+    return file;
+  }
 
-    // In each post file, metadata is represented as an unordered list with a
-    // colon (:) as the key-value separator and a comma (,) as the value
-    // separator.
-    //
-    // For example, the following metadata in a post ...
-    //
-    //   - date: 2020-12-10
-    //   - tags: Brave, News Reader, Browser
-    //
-    // ... will be parsed as the following JS object.
-    //
-    //   {
-    //     date: ['2020-12-10'],
-    //     tags: ['Brave', 'News Reader', 'Browser'],
-    //   }
-    //
-    // Parsing metadata ends at the post's title, starting with a sharp (#).
+  // In each post file, metadata is represented as an unordered list with a
+  // colon (:) as the key-value separator and a comma (,) as the value
+  // separator.
+  //
+  // For example, the following metadata in a post ...
+  //
+  //   - date: 2020-12-10
+  //   - tags: Brave, News Reader, Browser
+  //
+  // ... will be parsed as the following JS object.
+  //
+  //   {
+  //     date: ['2020-12-10'],
+  //     tags: ['Brave', 'News Reader', 'Browser'],
+  //   }
+  //
+  // Parsing metadata ends at the post's title, starting with a sharp (#).
+  parseMetadata(content) {
+    const lines = content.split('\n');
     const metadata = {};
     while (lines.length) {
       const line = lines.shift();
@@ -177,14 +186,8 @@ class PostParser extends Pipe {
         fail('The post is malformed.');
       }
     }
-    file.metadata = metadata;
-
-    // Convert the markdown content into HTML.
-    const markdownContent = lines.join('\n');
-    file.content = markdownConverter.makeHtml(markdownContent);
-    file.extname = '.html';
-
-    return file;
+    const remainingContent = lines.join('\n');
+    return {metadata, remainingContent};
   }
 }
 
