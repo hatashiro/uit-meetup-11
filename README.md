@@ -1,4 +1,4 @@
-# Implement you a static site generator.
+# Build you a static site generator
 
 Sample code for my talk in
 [UIT meetup vol.11](https://uit.connpass.com/event/197740/).
